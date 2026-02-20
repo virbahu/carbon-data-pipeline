@@ -5,6 +5,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?logo=postgresql)](https://postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-Virbahu%20Jain-4285F4?logo=googlescholar&logoColor=white)](https://scholar.google.com/citations?user=4SN8o-QAAAAJ&hl=en)
 
 > **Real-time IoT data ingestion and streaming pipeline for continuous Scope 3 carbon accounting — replacing 12-month survey cycles with live emission telemetry.**
 >
@@ -27,6 +28,26 @@
 >          
 >           - ---
 >
+> ## 🖼️ Data Flow Overview
+>
+> ![Streaming Architecture](https://img.shields.io/badge/IoT%20→%20Kafka%20→%20Spark%20→%20PostgreSQL-Real--time%20Carbon%20Ledger-orange?style=for-the-badge&logo=apachekafka)
+>
+> ```
+>  IoT Sensors (MQTT)  ─┐
+>  ERP Events (CDC)    ──┼──► Kafka Topics ──► Spark Streaming ──► Carbon Ledger
+>  Logistics APIs      ──┤                            │
+>  Supplier Portals    ─┘                             ▼
+>                                            Emission Factor Lookup
+>                                            (broadcast join)
+>                                                      │
+>                                   ┌──────────────────┼──────────────┐
+>                                   ▼                  ▼              ▼
+>                              PostgreSQL         TimescaleDB    Data Warehouse
+>                              (Audit Log)        (Dashboard)    (Annual Report)
+> ```
+>
+> ---
+>
 > ## 🏗️ Architecture Diagram
 >
 > ```
@@ -40,7 +61,6 @@
 > ║  │  IoT Snrs  │ │  Telemtcs  │ │  PO Events │ │   API Feeds    │ ║
 > ║  │  (MQTT)    │ │  (REST)    │ │  (Webhooks)│ │  (REST/SFTP)   │ ║
 > ║  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘ └──────┬─────────┘ ║
-> ║        │              │              │                │            ║
 > ║        └──────────────┴──────────────┴────────────────┘            ║
 > ║                                      │                             ║
 > ║                     ┌────────────────▼──────────────┐              ║
@@ -48,46 +68,26 @@
 > ║                     │    Kafka Connect + Producers   │              ║
 > ║                     │    • Schema Registry (Avro)    │              ║
 > ║                     │    • Dead Letter Queue         │              ║
-> ║                     │    • Backpressure control      │              ║
 > ║                     └────────────────┬──────────────┘              ║
 > ║                                      │                             ║
 > ║  KAFKA TOPICS:                       ▼                             ║
 > ║  ┌─────────────────────────────────────────────────────────────┐  ║
 > ║  │  raw.iot.energy  │  raw.logistics  │  raw.procurement       │  ║
-> ║  │  raw.supplier    │  raw.transport  │  dlq.failed_events     │  ║
 > ║  └─────────────────────────────┬───────────────────────────────┘  ║
 > ║                                 │                                   ║
 > ║  STREAM PROCESSING              ▼                                   ║
 > ║  ┌─────────────────────────────────────────────────────────────┐  ║
 > ║  │  Apache Spark Structured Streaming                          │  ║
-> ║  │                                                             │  ║
-> ║  │  ┌──────────────────────────────────────────────────────┐  │  ║
-> ║  │  │  Emission Factor Lookup (broadcast join)             │  │  ║
-> ║  │  │  • Match event type → GHG Protocol category          │  │  ║
-> ║  │  │  • Apply contextual EF (country, technology, year)   │  │  ║
-> ║  │  │  • Compute kgCO2e per event                          │  │  ║
-> ║  │  └──────────────────────────────────────────────────────┘  │  ║
-> ║  │                                                             │  ║
-> ║  │  ┌──────────────────────────────────────────────────────┐  │  ║
-> ║  │  │  Aggregation Windows                                 │  │  ║
-> ║  │  │  • 5-min tumbling: real-time monitoring              │  │  ║
-> ║  │  │  • 1-hour sliding: trend detection                   │  │  ║
-> ║  │  │  • 24-hour daily: inventory accrual                  │  │  ║
-> ║  │  └──────────────────────────────────────────────────────┘  │  ║
+> ║  │  • Emission Factor Lookup (broadcast join)                  │  ║
+> ║  │  • GHG Protocol category assignment                         │  ║
+> ║  │  • kgCO2e computation per event                             │  ║
+> ║  │  • 5-min / 1-hour / 24-hour aggregation windows             │  ║
 > ║  └─────────────────────────────┬───────────────────────────────┘  ║
 > ║                                 │                                   ║
-> ║  STORAGE LAYER                  ▼                                   ║
 > ║  ┌────────────────┐   ┌──────────────────┐   ┌──────────────────┐ ║
-> ║  │  PostgreSQL    │   │   Time-Series DB  │   │  Data Warehouse  │ ║
-> ║  │  (Audit Ledgr) │   │   (TimescaleDB)   │   │  (Snowflake /   │ ║
-> ║  │  • Immutable   │   │   • Dashboards    │   │   BigQuery)     │ ║
-> ║  │  • Partitioned │   │   • Anomaly det.  │   │   • Annual rpt  │ ║
+> ║  │  PostgreSQL    │   │   TimescaleDB     │   │  Data Warehouse  │ ║
+> ║  │  (Audit Ledgr) │   │   (Dashboards)    │   │  (Annual rpt)   │ ║
 > ║  └────────────────┘   └──────────────────┘   └──────────────────┘ ║
-> ║                                 │                                   ║
-> ║  OUTPUTS                        ▼                                   ║
-> ║  ┌─────────────────────────────────────────────────────────────┐  ║
-> ║  │  Live Dashboard (Grafana) │ API (FastAPI) │ CDP/CSRD Reports │  ║
-> ║  └─────────────────────────────────────────────────────────────┘  ║
 > ╚═══════════════════════════════════════════════════════════════════╝
 > ```
 >
@@ -97,7 +97,7 @@
 >
 > ### The Carbon Data Latency Crisis
 >
-> Enterprise Scope 3 accounting operates on a 12–18 month reporting cycle. Companies set decarbonization targets against data that is already stale before intervention can begin. The root cause is architectural: carbon data is treated as a periodic batch report rather than a continuous real-time signal.
+> Enterprise Scope 3 accounting operates on a 12–18 month reporting cycle. Companies set decarbonization targets against data that is already stale before intervention can begin.
 >
 > | Dimension | Batch Approach | Streaming Approach |
 > |---|---|---|
@@ -119,26 +119,17 @@
 > > The pipeline treats every energy consumption reading, every purchase order creation, every logistics leg departure, and every supplier production event as an emission-relevant event that must be immediately classified, quantified, and recorded.
 > >
 > > **Ingestion Layer**
-> > Apache Kafka Connect with pre-built connectors ingests data from MQTT brokers (factory IoT), REST APIs (logistics, supplier portals), SAP/Oracle CDC streams (ERP procurement events), and SFTP file drops (monthly supplier data). All events are schema-validated with Apache Avro and registered in the Schema Registry before entering the processing pipeline.
+> > Apache Kafka Connect with pre-built connectors ingests data from MQTT brokers (factory IoT), REST APIs (logistics, supplier portals), SAP/Oracle CDC streams (ERP procurement events), and SFTP file drops. All events are schema-validated with Apache Avro and registered in the Schema Registry.
 > >
 > > **Stream Processing Layer**
-> > Spark Structured Streaming jobs run continuously with micro-batch intervals of 30 seconds to 5 minutes depending on stream type. Each event undergoes emission factor lookup via a broadcast-joined reference table, Scope 3 category assignment, and kgCO2e computation. Windowed aggregations produce rolling inventory totals at supplier, facility, category, and organizational levels.
+> > Spark Structured Streaming jobs run continuously with micro-batch intervals of 30 seconds to 5 minutes. Each event undergoes emission factor lookup via a broadcast-joined reference table, Scope 3 category assignment, and kgCO2e computation. Windowed aggregations produce rolling inventory totals.
 > >
 > > **Storage and Serving Layer**
-> > Processed emission records land in three stores: PostgreSQL (audit ledger with immutable append-only writes), TimescaleDB (time-series for dashboards and trend analysis), and a data warehouse (historical analytics and annual regulatory reporting). A FastAPI service layer exposes inventory data to downstream applications.
+> > Processed emission records land in three stores: PostgreSQL (audit ledger), TimescaleDB (time-series for dashboards), and a data warehouse (historical analytics). A FastAPI service layer exposes inventory data to downstream applications.
 > >
 > > ---
 > >
 > > ## 💻 Code, Installation & Analysis
-> >
-> > ### Prerequisites
-> >
-> > | Requirement | Version |
-> > |---|---|
-> > | Docker & Docker Compose | 24.0+ |
-> > | Python | 3.10+ |
-> > | RAM | 16 GB minimum |
-> > | Storage | 50 GB (for development data) |
 > >
 > > ### Quick Start with Docker
 > >
@@ -149,20 +140,10 @@
 > > # Start the full stack
 > > docker-compose up -d
 > >
-> > # Verify all services are healthy
-> > docker-compose ps
+> > # Services: Kafka, Schema Registry, Kafka Connect,
+> > # Spark (1 master + 2 workers), PostgreSQL, TimescaleDB, Grafana, FastAPI
 > >
-> > # Services started:
-> > # ✓ Kafka (3 brokers)
-> > # ✓ Schema Registry
-> > # ✓ Kafka Connect
-> > # ✓ Apache Spark (1 master, 2 workers)
-> > # ✓ PostgreSQL 15
-> > # ✓ TimescaleDB
-> > # ✓ Grafana Dashboard
-> > # ✓ FastAPI emission service
-> >
-> > # Load demo data (IoT + procurement events)
+> > # Load demo data
 > > python scripts/load_demo_data.py --events 10000 --duration 60
 > > ```
 > >
@@ -174,20 +155,17 @@
 > >
 > > producer = CarbonEventProducer(bootstrap_servers="localhost:9092")
 > >
-> > # Produce an energy consumption event (from factory smart meter)
 > > event = IoTEnergyEvent(
 > >     sensor_id="SM-PLANT-DE-042",
 > >     facility_id="FACILITY_MUENCHEN_01",
 > >     country_iso2="DE",
 > >     energy_kwh=1247.3,
 > >     energy_source="grid",
-> >     grid_carbon_intensity_gco2_kwh=385.2,  # German grid, 2025
-> >     timestamp=datetime.utcnow(),
-> >     scope=2  # Direct measurement for Scope 2
+> >     grid_carbon_intensity_gco2_kwh=385.2,
+> >     timestamp=datetime.utcnow()
 > > )
 > >
 > > producer.send("raw.iot.energy", key=event.sensor_id, value=event)
-> > print(f"Produced: {event.energy_kwh} kWh → {event.energy_kwh * event.grid_carbon_intensity_gco2_kwh / 1e6:.2f} tCO2e")
 > > ```
 > >
 > > ### Querying the Carbon Ledger
@@ -197,18 +175,16 @@
 > >
 > > client = CarbonLedgerClient(base_url="http://localhost:8000")
 > >
-> > # Get real-time Scope 3 inventory for a supplier
 > > inventory = client.get_supplier_inventory(
 > >     supplier_id="SUP_042_DE",
 > >     scope=3,
 > >     start_date="2025-01-01",
-> >     end_date="2025-12-31",
-> >     granularity="daily"
+> >     end_date="2025-12-31"
 > > )
 > >
-> > print(f"YTD Scope 3 (Supplier): {inventory.total_tco2e:,.1f} tCO2e")
+> > print(f"YTD Scope 3: {inventory.total_tco2e:,.1f} tCO2e")
 > > print(f"Last updated: {inventory.last_event_timestamp}")
-> > # >> YTD Scope 3 (Supplier): 4,832.7 tCO2e
+> > # >> YTD Scope 3: 4,832.7 tCO2e
 > > # >> Last updated: 2025-12-20T14:32:07Z  (< 1 minute ago)
 > > ```
 > >
@@ -217,24 +193,16 @@
 > > ## 📦 Dependencies
 > >
 > > ```yaml
-> > # docker-compose.yml services
+> > # docker-compose.yml
 > > services:
-> >   kafka:
-> >     image: confluentinc/cp-kafka:7.6.0
-> >   schema-registry:
-> >     image: confluentinc/cp-schema-registry:7.6.0
-> >   kafka-connect:
-> >     image: confluentinc/cp-kafka-connect:7.6.0
-> >   spark-master:
-> >     image: bitnami/spark:3.5
-> >   spark-worker:
-> >     image: bitnami/spark:3.5
-> >   postgres:
-> >     image: postgres:15
-> >   timescaledb:
-> >     image: timescale/timescaledb:latest-pg15
-> >   grafana:
-> >     image: grafana/grafana:10.3.0
+> >   kafka:         confluentinc/cp-kafka:7.6.0
+> >   schema-reg:    confluentinc/cp-schema-registry:7.6.0
+> >   kafka-connect: confluentinc/cp-kafka-connect:7.6.0
+> >   spark-master:  bitnami/spark:3.5
+> >   spark-worker:  bitnami/spark:3.5
+> >   postgres:      postgres:15
+> >   timescaledb:   timescale/timescaledb:latest-pg15
+> >   grafana:       grafana/grafana:10.3.0
 > > ```
 > >
 > > ```toml
@@ -254,29 +222,40 @@
 > >
 > > ## 👤 Author
 > >
-> > **Virbahu Jain** — Founder & CEO, [Quantisage](https://quantisage.com)
-> >
-> > > *Building the AI Operating System for Scope 3 emissions management and supply chain decarbonization.*
-> > >
-> > > | | |
-> > > |---|---|
-> > > | 🎓 **Education** | MBA, Kellogg School of Management, Northwestern University |
-> > > | 🏭 **Experience** | 20+ years across manufacturing, life sciences, energy & public sector |
-> > > | 🌍 **Scope** | Supply chain operations on five continents |
-> > > | 📝 **Research** | Peer-reviewed publications on AI in sustainable supply chains |
-> > > | 🔬 **Patents** | IoT and AI solutions for manufacturing and logistics |
-> > >
-> > > [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?logo=linkedin)](https://linkedin.com/in/virbahu)
-> > > [![GitHub](https://img.shields.io/badge/GitHub-virbahu-181717?logo=github)](https://github.com/virbahu)
-> > >
-> > > ---
-> > >
-> > > ## 📄 License
-> > >
-> > > MIT License — see [LICENSE](LICENSE) for details.
-> > >
-> > > ---
-> > >
-> > > <div align="center">
+> > <img src="https://avatars.githubusercontent.com/u/virbahu" width="80" align="left" style="margin-right:15px; border-radius:50%"/>
+
+**Virbahu Jain** — Founder & CEO, [Quantisage](https://quantisage.com)
+
+> *Building the AI Operating System for Scope 3 emissions management and supply chain decarbonization.*
+>
+> <br clear="left"/>
+
+| | |
+|---|---|
+| 🎓 **Education** | MBA, Kellogg School of Management, Northwestern University |
+| 🏭 **Experience** | 20+ years across manufacturing, life sciences, energy & public sector |
+| 🌍 **Scope** | Supply chain operations on five continents |
+| 📝 **Research** | Peer-reviewed publications on AI in sustainable supply chains |
+| 🔬 **Patents** | IoT and AI solutions for manufacturing and logistics |
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?logo=linkedin)](https://linkedin.com/in/virbahu)
+[![GitHub](https://img.shields.io/badge/GitHub-virbahu-181717?logo=github)](https://github.com/virbahu)
+[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-Publications-4285F4?logo=googlescholar&logoColor=white)](https://scholar.google.com/citations?user=4SN8o-QAAAAJ&hl=en)
+[![Quantisage](https://img.shields.io/badge/Company-Quantisage-00C853)](https://quantisage.com)
+
+---
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+![Quantisage](https://img.shields.io/badge/Quantisage-Open%20Source%20Initiative-00C853?style=for-the-badge)
+![Supply Chain](https://img.shields.io/badge/AI-Supply%20Chain-blue?style=for-the-badge)
+![Climate](https://img.shields.io/badge/Climate-Tech-green?style=for-the-badge)
+
 <sub>Part of the <strong>Quantisage Open Source Initiative</strong> | AI × Supply Chain × Climate</sub>
 </div>
